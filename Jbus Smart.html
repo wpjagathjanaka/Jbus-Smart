@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jbus Smart Home Dashboard - Secure Multi-User</title>
+    <link rel="manifest" href="manifest.json">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/4.3.7/mqtt.min.js"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        qbus: {
+                            orange: '#f39c12',
+                            'orange-hover': '#e67e22',
+                            'dark-bg': '#12181f',
+                            'dark-card': '#1a232e',
+                            'light-bg': '#f5f5f7',
+                            'light-sidebar': '#eaeaed',
+                            'light-card': '#ffffff'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; user-select: none; -webkit-tap-highlight-color: transparent; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: rgba(0, 0, 0, 0.2); }
+        ::-webkit-scrollbar-thumb { background: rgba(243, 156, 18, 0.5); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(243, 156, 18, 0.8); }
+        .icon-glow-orange { filter: drop-shadow(0 0 14px rgba(243, 156, 18, 0.85)); }
+        /* Prevent any default focus outline/blink on click */
+        *:focus { outline: none !important; box-shadow: none !important; }
+    </style>
+</head>
+<body class="bg-qbus-dark-bg text-gray-200 h-screen w-screen overflow-hidden flex flex-col md:flex-row-reverse">
+
+    <!-- Auth Screen -->
+    <div id="auth-screen" class="fixed inset-0 z-50 bg-qbus-dark-bg flex items-center justify-center p-4">
+        <div class="bg-qbus-dark-card border border-gray-800 w-full max-w-md rounded-2xl p-8 shadow-2xl relative overflow-hidden">
+            <div class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-qbus-orange to-yellow-500"></div>
+            <div class="text-center mb-6">
+                <div class="inline-flex items-center justify-center w-16 h-16 bg-qbus-orange/10 rounded-2xl mb-3 text-qbus-orange">
+                    <i class="fa-solid fa-shield-halved text-3xl"></i>
+                </div>
+                <h1 id="auth-title" class="text-2xl font-bold text-white tracking-wide">User Login</h1>
+                <p id="auth-subtitle" class="text-xs text-gray-400 mt-1">Cloud Smart Home Secure Portal</p>
+            </div>
+
+            <form id="auth-form" onsubmit="handleAuthSubmit(event)" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Email Address</label>
+                    <input type="email" id="auth-email" required placeholder="user@example.com" class="w-full bg-gray-900 border border-gray-700 rounded-lg py-2.5 px-4 text-sm text-white focus:outline-none focus:border-qbus-orange transition">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Password</label>
+                    <input type="password" id="auth-password" required placeholder="••••••••" class="w-full bg-gray-900 border border-gray-700 rounded-lg py-2.5 px-4 text-sm text-white focus:outline-none focus:border-qbus-orange transition">
+                </div>
+                <button type="submit" id="auth-submit-btn" class="w-full py-3 bg-qbus-orange hover:bg-qbus-orange-hover text-gray-900 font-bold rounded-lg transition shadow-lg mt-2">
+                    SIGN IN
+                </button>
+            </form>
+
+            <div class="text-center mt-6">
+                <button type="button" onclick="toggleAuthMode()" id="auth-toggle-link" class="text-xs text-qbus-orange hover:underline">
+                    Don't have an account? Sign Up
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="flex-1 flex flex-col md:flex-row overflow-hidden w-full h-full">
+        <aside class="w-full md:w-20 bg-[#0d1217] border-t md:border-t-0 md:border-r border-gray-800 flex md:flex-col items-center py-3 md:py-6 px-4 md:px-0 justify-around md:justify-between z-20 shrink-0 order-last md:order-first">
+            <div class="hidden md:flex flex-col items-center cursor-pointer" onclick="switchMainView('control')">
+                <div class="w-10 h-10 rounded-xl bg-qbus-orange text-gray-950 font-black text-xl flex items-center justify-center shadow-lg">J</div>
+                <span class="text-[10px] tracking-wider text-qbus-orange font-bold mt-1.5">CONTROL</span>
+            </div>
+            <nav class="flex md:flex-col gap-6 items-center w-full justify-around md:justify-start">
+                <button id="nav-btn-control" onclick="switchMainView('control')" class="nav-icon-btn flex flex-col items-center justify-center w-12 h-12 rounded-xl text-qbus-orange bg-qbus-orange/10 transition">
+                    <i class="fa-solid fa-sliders text-xl"></i>
+                    <span class="text-[9px] font-medium mt-1">Control</span>
+                </button>
+                <button id="nav-btn-settings" onclick="switchMainView('settings')" class="nav-icon-btn flex flex-col items-center justify-center w-12 h-12 rounded-xl text-gray-400 hover:text-qbus-orange hover:bg-gray-800/60 transition">
+                    <i class="fa-solid fa-gear text-xl"></i>
+                    <span class="text-[9px] font-medium mt-1">Settings</span>
+                </button>
+            </nav>
+            <div class="hidden md:flex flex-col items-center gap-4">
+                <div class="w-9 h-9 rounded-full bg-gray-800 border border-gray-700 flex items-center justify-center text-xs font-bold text-qbus-orange" id="user-avatar" title="Logged User">US</div>
+                <button onclick="handleLogout()" class="text-gray-500 hover:text-red-400 transition text-lg" title="Logout"><i class="fa-solid fa-right-from-bracket"></i></button>
+            </div>
+        </aside>
+
+        <main class="flex-1 flex flex-col overflow-hidden relative w-full h-full">
+            <header class="h-14 border-b border-gray-800/80 px-4 md:px-6 flex items-center justify-between bg-qbus-dark-bg/90 backdrop-blur z-10 shrink-0">
+                <div class="flex items-center gap-2 md:gap-3 overflow-hidden">
+                    <h2 class="font-bold text-sm md:text-lg text-white tracking-wide">Jbus Smart Home</h2>
+                    <div id="esp-status-container" class="flex items-center gap-2 overflow-x-auto">
+                        <span class="px-2.5 py-1 rounded-full text-[10px] md:text-[11px] font-semibold bg-gray-800 text-gray-400 border border-gray-700 flex items-center gap-1.5 shrink-0">
+                            <span class="w-2 h-2 rounded-full bg-gray-500"></span>
+                            <span>Waiting for ESP...</span>
+                        </span>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2 md:gap-4 text-xs">
+                    <span id="logged-user-email" class="text-qbus-orange font-semibold hidden sm:inline"></span>
+                    <div class="hidden sm:block bg-gray-900 border border-gray-800 rounded-lg px-3 py-1.5 text-gray-300" id="esp-nodes-count">Outputs: 0 Active</div>
+                    <div class="bg-gray-900 border border-gray-800 rounded-lg px-2.5 py-1.5 text-gray-300" id="clock-display">12:00:00 PM</div>
+                </div>
+            </header>
+
+            <div id="view-control" class="flex-1 flex flex-col overflow-hidden p-4 md:p-6 space-y-4">
+                <div class="flex-1 overflow-x-auto overflow-y-hidden flex flex-row gap-6 pb-4 items-start h-full" id="grouped-devices-container"></div>
+            </div>
+
+            <div id="view-settings" class="flex-1 flex flex-col md:flex-row overflow-hidden bg-qbus-light-bg text-gray-800 hidden">
+                <div class="w-full md:w-64 bg-qbus-light-sidebar border-b md:border-b-0 md:border-r border-gray-300 flex flex-row md:flex-col p-3 md:p-4 shrink-0 overflow-x-auto md:overflow-y-auto space-x-2 md:space-x-0 md:space-y-1 text-xs font-medium">
+                    <div class="hidden md:block text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 px-3">Configuration</div>
+                    <button onclick="switchSettingsTab('devices')" id="tab-btn-devices" class="settings-tab-btn active whitespace-nowrap text-left px-3 py-2.5 rounded-lg bg-white shadow-sm text-gray-900 font-bold">Manage ESP Outputs</button>
+                </div>
+                
+                <div class="flex-1 p-4 md:p-6 overflow-y-auto">
+                    <div id="set-devices" class="settings-pane space-y-4 md:space-y-6">
+                        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-gray-300 pb-3">
+                            <div>
+                                <h3 class="text-base md:text-xl font-bold text-gray-900">Manage ESP Outputs</h3>
+                            </div>
+                            <button onclick="addEspDeviceModal()" class="px-3 py-1.5 bg-qbus-orange text-gray-950 font-bold text-xs rounded-lg shadow hover:bg-qbus-orange-hover">+ Add New ESP Output</button>
+                        </div>
+                        <div class="bg-white rounded-xl border border-gray-300 shadow-sm overflow-hidden max-w-4xl p-3 md:p-4 space-y-3" id="device-manager-list"></div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        let currentUser = null;
+        let isRegisterMode = false;
+        let devices = [];
+        let espNodesStatus = {}; 
+        let mqttClient = null;
+
+        window.onload = function() {
+            setupClock();
+            checkActiveSession();
+        };
+
+        function toggleAuthMode() {
+            isRegisterMode = !isRegisterMode;
+            document.getElementById('auth-title').innerText = isRegisterMode ? 'Create Account' : 'User Login';
+            document.getElementById('auth-submit-btn').innerText = isRegisterMode ? 'SIGN UP' : 'SIGN IN';
+        }
+
+        function handleAuthSubmit(e) {
+            e.preventDefault();
+            const email = document.getElementById('auth-email').value.trim().toLowerCase();
+            const pass = document.getElementById('auth-password').value;
+
+            let usersDB = JSON.parse(localStorage.getItem('jbus_users_db') || '{}');
+
+            if (isRegisterMode) {
+                if (usersDB[email]) { alert('Already registered!'); return; }
+                usersDB[email] = { password: pass, devices: [] };
+                localStorage.setItem('jbus_users_db', JSON.stringify(usersDB));
+                alert('Account created! Please sign in.');
+                toggleAuthMode();
+            } else {
+                if (!usersDB[email] || usersDB[email].password !== pass) { alert('Invalid credentials!'); return; }
+                currentUser = email;
+                localStorage.setItem('jbus_current_user', currentUser);
+                loadUserData();
+                initAppDashboard();
+            }
+        }
+
+        function checkActiveSession() {
+            const savedUser = localStorage.getItem('jbus_current_user');
+            if (savedUser) {
+                let usersDB = JSON.parse(localStorage.getItem('jbus_users_db') || '{}');
+                if (usersDB[savedUser]) {
+                    currentUser = savedUser;
+                    loadUserData();
+                    initAppDashboard();
+                    return;
+                }
+            }
+            document.getElementById('auth-screen').classList.remove('hidden');
+        }
+
+        function handleLogout() {
+            localStorage.removeItem('jbus_current_user');
+            if (mqttClient) mqttClient.end();
+            window.location.reload();
+        }
+
+        function loadUserData() {
+            let usersDB = JSON.parse(localStorage.getItem('jbus_users_db') || '{}');
+            if (usersDB[currentUser]) {
+                devices = usersDB[currentUser].devices || [];
+            }
+        }
+
+        function saveUserData() {
+            if (!currentUser) return;
+            let usersDB = JSON.parse(localStorage.getItem('jbus_users_db') || '{}');
+            if (!usersDB[currentUser]) usersDB[currentUser] = {};
+            usersDB[currentUser].devices = devices;
+            localStorage.setItem('jbus_users_db', JSON.stringify(usersDB));
+        }
+
+        function initAppDashboard() {
+            document.getElementById('auth-screen').classList.add('hidden');
+            document.getElementById('logged-user-email').innerText = currentUser;
+            document.getElementById('user-avatar').innerText = currentUser.substring(0, 2).toUpperCase();
+
+            renderDevices();
+            renderDeviceManager();
+            renderEspStatusUI();
+            initMQTT();
+        }
+
+        function setupClock() {
+            setInterval(() => {
+                document.getElementById('clock-display').innerText = new Date().toLocaleTimeString();
+            }, 1000);
+        }
+
+        function isNodeOffline(groupName) {
+            if (!groupName) return false;
+            const target = groupName.trim().toLowerCase();
+            for (const [key, status] of Object.entries(espNodesStatus)) {
+                if (key.trim().toLowerCase() === target) {
+                    return status.toLowerCase() === 'offline';
+                }
+            }
+            return false;
+        }
+
+        function initMQTT() {
+            const brokerUrl = 'wss://broker.emqx.io:8084/mqtt';
+            const userTopicPrefix = 'jbus/' + currentUser + '/';
+
+            try {
+                mqttClient = mqtt.connect(brokerUrl, {
+                    clientId: 'jbus_hub_' + Math.random().toString(16).substr(2, 8),
+                    username: 'jttechsolutions',
+                    password: 'Jm@7811255475',
+                    keepalive: 30,
+                    reconnectPeriod: 3000
+                });
+
+                mqttClient.on('connect', () => {
+                    mqttClient.subscribe(userTopicPrefix + "status");
+                    mqttClient.subscribe(userTopicPrefix + "register_node");
+
+                    devices.forEach(dev => {
+                        mqttClient.subscribe(dev.topic);
+                        mqttClient.subscribe(dev.topic + '/set');
+                    });
+                });
+
+                mqttClient.on('message', (topic, message) => {
+                    const payload = message.toString().trim();
+
+                    if (topic === userTopicPrefix + "status") {
+                        if (payload.toLowerCase().startsWith("online:")) {
+                            const nodeName = payload.split(":")[1].trim();
+                            if (isNodeDeleted(nodeName)) return;
+                            
+                            espNodesStatus[nodeName] = 'Online';
+                            renderEspStatusUI();
+                            renderDevices();
+                        } 
+                        else if (payload.toLowerCase().startsWith("offline:")) {
+                            const nodeName = payload.split(":")[1].trim();
+                            if (isNodeDeleted(nodeName)) return;
+                            
+                            espNodesStatus[nodeName] = 'Offline';
+                            renderEspStatusUI();
+                            renderDevices();
+                        }
+                    }
+
+                    if (topic === userTopicPrefix + "register_node") {
+                        const parts = payload.split("|");
+                        if (parts.length === 2) {
+                            const espName = parts[0].trim();
+                            if (isNodeDeleted(espName)) return;
+
+                            const topics = parts[1].split(",");
+                            
+                            devices = devices.filter(d => d.group.toLowerCase() !== espName.toLowerCase());
+                            
+                            topics.forEach((top, index) => {
+                                const exists = devices.find(d => d.topic === top);
+                                if (!exists) {
+                                    devices.push({
+                                        id: 'dev-' + espName.replace(/\s+/g, '') + '-' + (index + 1) + '-' + Date.now(),
+                                        group: espName,
+                                        name: `Relay ${index + 1}`,
+                                        topic: top,
+                                        state: false,
+                                        totalLifetimeMs: 0
+                                    });
+                                    mqttClient.subscribe(top);
+                                    mqttClient.subscribe(top + '/set');
+                                }
+                            });
+                            
+                            saveUserData();
+                            renderDevices();
+                            renderDeviceManager();
+                        }
+                    }
+
+                    devices.forEach(dev => {
+                        if (topic === dev.topic || topic === dev.topic + '/set') {
+                            const nodeName = dev.group || 'General';
+                            if (isNodeOffline(nodeName)) return;
+
+                            const newState = (payload === 'ON' || payload === '1' || payload === 'true');
+                            if (dev.state !== newState) {
+                                dev.state = newState;
+                                saveUserData();
+                                renderDevices();
+                            }
+                        }
+                    });
+                });
+            } catch(e) {}
+        }
+
+        function isNodeDeleted(nodeName) {
+            let deletedNodes = JSON.parse(localStorage.getItem('jbus_deleted_nodes_' + currentUser) || '[]');
+            return deletedNodes.includes(nodeName.trim().toLowerCase());
+        }
+
+        function markNodeAsDeleted(nodeName) {
+            let deletedNodes = JSON.parse(localStorage.getItem('jbus_deleted_nodes_' + currentUser) || '[]');
+            let n = nodeName.trim().toLowerCase();
+            if (!deletedNodes.includes(n)) {
+                deletedNodes.push(n);
+                localStorage.setItem('jbus_deleted_nodes_' + currentUser, JSON.stringify(deletedNodes));
+            }
+        }
+
+        function renderEspStatusUI() {
+            const container = document.getElementById('esp-status-container');
+            if (!container) return;
+            
+            container.innerHTML = '';
+            
+            let allNodes = new Set();
+            devices.forEach(d => { if(d.group && !isNodeDeleted(d.group)) allNodes.add(d.group.trim()); });
+            Object.keys(espNodesStatus).forEach(n => { if(!isNodeDeleted(n)) allNodes.add(n); });
+
+            if (allNodes.size === 0) {
+                container.innerHTML = `
+                    <span class="px-2.5 py-1 rounded-full text-[10px] md:text-[11px] font-semibold bg-gray-800 text-gray-400 border border-gray-700 flex items-center gap-1.5 shrink-0">
+                        <span class="w-2 h-2 rounded-full bg-gray-500"></span>
+                        <span>Waiting for ESP...</span>
+                    </span>
+                `;
+                return;
+            }
+
+            allNodes.forEach(nodeName => {
+                const isOffline = isNodeOffline(nodeName);
+                const status = isOffline ? 'Offline' : 'Online';
+                const isOnline = !isOffline;
+
+                container.innerHTML += `
+                    <span class="px-2.5 py-1 rounded-full text-[10px] md:text-[11px] font-semibold ${isOnline ? 'bg-emerald-950 text-emerald-400 border border-emerald-800/50' : 'bg-red-950 text-red-400 border border-red-800/50'} flex items-center gap-1.5 shrink-0">
+                        <span class="w-2 h-2 rounded-full ${isOnline ? 'bg-emerald-400 animate-pulse' : 'bg-red-500'}"></span>
+                        <span>${nodeName}: ${status}</span>
+                    </span>
+                `;
+            });
+        }
+
+        function toggleDevice(id) {
+            const dev = devices.find(d => d.id === id);
+            if (!dev) return;
+
+            const nodeName = dev.group || 'General';
+            if (isNodeOffline(nodeName)) return;
+
+            dev.state = !dev.state;
+            saveUserData();
+            renderDevices();
+
+            if (mqttClient && mqttClient.connected) {
+                mqttClient.publish(dev.topic, dev.state ? 'ON' : 'OFF', { retain: true, qos: 0 });
+            }
+        }
+
+        function renderDevices() {
+            const container = document.getElementById('grouped-devices-container');
+            if (!container) return;
+            container.innerHTML = '';
+
+            let groupedObj = {};
+            devices.forEach(dev => {
+                let gName = dev.group ? dev.group.trim() : 'General';
+                if (!isNodeDeleted(gName)) {
+                    if (!groupedObj[gName]) groupedObj[gName] = [];
+                    groupedObj[gName].push(dev);
+                }
+            });
+
+            if (Object.keys(groupedObj).length === 0) {
+                container.innerHTML = `<div class="text-center text-gray-500 py-10 text-sm w-full">No outputs found. Add devices in Settings.</div>`;
+                document.getElementById('esp-nodes-count').innerText = `Outputs: 0 Active`;
+                renderEspStatusUI();
+                return;
+            }
+
+            for (const [groupName, groupDevs] of Object.entries(groupedObj)) {
+                const isOffline = isNodeOffline(groupName);
+
+                let cardsHtml = '';
+                groupDevs.forEach(dev => {
+                    cardsHtml += `
+                        <div onclick="toggleDevice('${dev.id}')" class="bg-qbus-dark-card border border-gray-800 rounded-xl p-3 cursor-pointer flex flex-col items-center justify-center transition-all duration-300 ${isOffline ? 'opacity-50 cursor-not-allowed pointer-events-none' : 'hover:border-qbus-orange/50'} shadow-md h-28 w-28 shrink-0 relative focus:outline-none" style="outline: none !important;">
+                            ${isOffline ? '<div class="absolute top-1.5 left-1.5 w-6 h-6 flex items-center justify-center rounded-full bg-red-500/20 text-red-500 z-10" title="ESP Offline - Locked"><i class="fa-solid fa-triangle-exclamation text-xs"></i></div>' : ''}
+                            <div class="my-auto flex flex-col items-center justify-center pointer-events-none">
+                                <i class="fa-solid fa-lightbulb text-3xl transition-all duration-300 ${dev.state ? 'text-qbus-orange icon-glow-orange' : 'text-gray-600'} mb-2"></i>
+                                <h4 class="font-semibold text-[11px] text-white text-center truncate w-24">${dev.name}</h4>
+                            </div>
+                        </div>
+                    `;
+                });
+
+                container.innerHTML += `
+                    <div class="bg-[#151c24] border border-gray-800/70 rounded-2xl p-4 flex flex-col space-y-3 shrink-0 max-h-full overflow-hidden">
+                        <div class="text-sm font-bold text-white tracking-wide border-b border-gray-800 pb-2 shrink-0 flex items-center gap-2">
+                            <i class="fa-solid fa-folder-open text-qbus-orange text-xs"></i>
+                            <span class="truncate">${groupName}</span>
+                        </div>
+                        <div class="grid grid-rows-3 grid-flow-col gap-3 overflow-x-auto overflow-y-hidden pr-1 pb-1">
+                            ${cardsHtml}
+                        </div>
+                    </div>
+                `;
+            }
+
+            document.getElementById('esp-nodes-count').innerText = `Outputs: ${devices.length} Active`;
+            renderEspStatusUI();
+        }
+
+        function switchSettingsTab(tab) {
+            document.querySelectorAll('.settings-pane').forEach(p => p.classList.add('hidden'));
+            document.querySelectorAll('.settings-tab-btn').forEach(b => {
+                b.className = "settings-tab-btn whitespace-nowrap text-left px-3 py-2.5 rounded-lg text-gray-600 hover:bg-gray-200/70 transition";
+            });
+            document.getElementById(`tab-btn-${tab}`).className = "settings-tab-btn whitespace-nowrap text-left px-3 py-2.5 rounded-lg bg-white shadow-sm text-gray-900 font-bold";
+            document.getElementById(`set-${tab}`).classList.remove('hidden');
+        }
+
+        function renderDeviceManager() {
+            const list = document.getElementById('device-manager-list');
+            if (!list) return;
+            list.innerHTML = '';
+            
+            let allGroups = new Set();
+            devices.forEach(d => { if(d.group && !isNodeDeleted(d.group)) allGroups.add(d.group.trim()); });
+            Object.keys(espNodesStatus).forEach(n => { if(!isNodeDeleted(n)) allGroups.add(n); });
+
+            if (allGroups.size === 0) {
+                list.innerHTML = `<div class="text-center text-gray-500 py-6 text-xs">No ESP nodes found.</div>`;
+                return;
+            }
+
+            let groupedObj = {};
+            devices.forEach(dev => {
+                let gName = dev.group ? dev.group.trim() : 'General';
+                if (!isNodeDeleted(gName)) {
+                    if (!groupedObj[gName]) groupedObj[gName] = [];
+                    groupedObj[gName].push(dev);
+                }
+            });
+
+            allGroups.forEach(groupName => {
+                let groupDevs = groupedObj[groupName] || [];
+                let nodeHtml = `
+                    <div class="bg-gray-50 border border-gray-300 rounded-xl p-3 space-y-3 shadow-sm">
+                        <div class="flex items-center justify-between border-b border-gray-200 pb-2">
+                            <span class="font-bold text-gray-900 text-sm"><i class="fa-solid fa-microchip text-qbus-orange mr-1.5"></i> ESP Node Name: ${groupName}</span>
+                            <button onclick="removeEspNode('${groupName}')" class="px-3 py-1 bg-red-100 text-red-600 hover:bg-red-200 rounded font-bold text-xs transition">
+                                <i class="fa-solid fa-trash mr-1"></i> Delete Node (${groupName})
+                            </button>
+                        </div>
+                `;
+
+                if (groupDevs.length === 0) {
+                    nodeHtml += `<div class="text-xs text-gray-400 italic py-1">No outputs registered under this node.</div>`;
+                } else {
+                    nodeHtml += `<div class="space-y-2">`;
+                    groupDevs.forEach((dev) => {
+                        nodeHtml += `
+                            <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between p-2.5 bg-white rounded-lg text-xs gap-3 border border-gray-200">
+                                <div class="w-full sm:w-1/3 flex flex-col gap-1">
+                                    <span class="text-[10px] text-gray-500 uppercase font-bold">Output Name:</span>
+                                    <input type="text" value="${dev.name}" oninput="updateDisplayName('${dev.id}', this.value)" class="border border-gray-300 rounded px-2 py-1 font-semibold text-gray-900 bg-white focus:outline-none focus:ring-1 focus:ring-qbus-orange w-full">
+                                </div>
+                                <div class="w-full sm:w-1/2 flex flex-col gap-1">
+                                    <span class="text-[10px] text-gray-400 uppercase font-bold">MQTT Topic:</span>
+                                    <input type="text" value="${dev.topic}" oninput="updateTopic('${dev.id}', this.value)" class="border border-gray-300 rounded px-2 py-1 font-mono text-gray-900 bg-white focus:outline-none focus:ring-1 focus:ring-qbus-orange w-full">
+                                </div>
+                                <div class="flex items-center gap-2 mt-auto">
+                                    <button onclick="removeDevice('${dev.id}')" class="text-red-500 font-bold hover:text-red-700 px-2 py-1">Remove</button>
+                                </div>
+                            </div>
+                        `;
+                    });
+                    nodeHtml += `</div>`;
+                }
+
+                nodeHtml += `</div>`;
+                list.innerHTML += nodeHtml;
+            });
+        }
+
+        function removeEspNode(groupName) {
+            if (confirm(`Are you sure you want to delete the entire ESP node "${groupName}" and clear its status?`)) {
+                markNodeAsDeleted(groupName);
+
+                devices = devices.filter(d => (d.group ? d.group.trim().toLowerCase() : 'general') !== groupName.trim().toLowerCase());
+                delete espNodesStatus[groupName];
+                
+                if (mqttClient && mqttClient.connected) {
+                    const statusTopic = 'jbus/' + currentUser + '/status';
+                    mqttClient.publish(statusTopic, "", { retain: true, qos: 1 });
+                    
+                    const registerTopic = 'jbus/' + currentUser + '/register_node';
+                    mqttClient.publish(registerTopic, "", { retain: true, qos: 1 });
+                }
+
+                saveUserData();
+                renderDevices();
+                renderDeviceManager();
+                renderEspStatusUI();
+            }
+        }
+
+        function updateDisplayName(id, val) {
+            const dev = devices.find(d => d.id === id);
+            if (dev && val.trim() !== '') { dev.name = val.trim(); saveUserData(); renderDevices(); }
+        }
+
+        function updateTopic(id, newTopic) {
+            const dev = devices.find(d => d.id === id);
+            if (dev && newTopic.trim() !== '') {
+                const oldTopic = dev.topic;
+                dev.topic = newTopic.trim();
+                saveUserData();
+                if (mqttClient && mqttClient.connected) {
+                    mqttClient.unsubscribe(oldTopic);
+                    mqttClient.subscribe(dev.topic);
+                    mqttClient.subscribe(dev.topic + '/set');
+                }
+                renderDevices();
+            }
+        }
+
+        function addEspDeviceModal() {
+            const group = prompt("Group Name (e.g., Dining):", "Dining");
+            if (!group) return;
+            const name = prompt("Output Name (e.g., Light 1):", "Light 1");
+            if (!name) return;
+            const topic = prompt("MQTT Topic:", "jbus/" + currentUser + "/esp/Dining/relay1");
+            if (!topic) return;
+            
+            devices.push({ id: 'dev-' + Date.now(), group, name, topic, state: false, totalLifetimeMs: 0 });
+            saveUserData();
+            renderDevices();
+            renderDeviceManager();
+            if (mqttClient && mqttClient.connected) {
+                mqttClient.subscribe(topic);
+                mqttClient.subscribe(topic + '/set');
+            }
+        }
+
+        function removeDevice(id) {
+            devices = devices.filter(d => d.id !== id);
+            saveUserData();
+            renderDevices();
+            renderDeviceManager();
+        }
+
+        function switchMainView(view) {
+            document.getElementById('view-control').classList.add('hidden');
+            document.getElementById('view-settings').classList.add('hidden');
+            document.getElementById(`view-${view}`).classList.remove('hidden');
+        }
+    </script>
+</body>
+</html>
